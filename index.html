@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Party Prep</title>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #111418; color: #f2f4f7;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; overflow: hidden; }
+  .app { height: 100vh; display: flex; flex-direction: column; padding: 1.2vh 1.5vw; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1vh; }
+  h1 { font-size: 3.6vh; letter-spacing: 0.05em; }
+  .progress { font-size: 2.6vh; opacity: 0.85; }
+  .bar { height: 1vh; background: #2a2f37; border-radius: 1vh; margin-bottom: 1.2vh; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: #3ecf6e; transition: width 0.4s; }
+  .board { flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1.2vw; min-height: 0; }
+  .card { background: #1b1f26; border-radius: 1.2vh; padding: 1.2vh 1vw; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+  .card h2 { font-size: 2.6vh; margin-bottom: 0.8vh; color: #8ab4ff; text-transform: uppercase; letter-spacing: 0.06em; }
+  .outside h2 { color: #ffb86b; }
+  .tasks { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5vh; padding-right: 0.4vw; scrollbar-width: thin; scrollbar-color: #4a5260 transparent; }
+  .tasks::-webkit-scrollbar { width: 0.8vh; }
+  .tasks::-webkit-scrollbar-thumb { background: #4a5260; border-radius: 1vh; }
+  .tasks::-webkit-scrollbar-track { background: transparent; }
+  .task { display: flex; align-items: center; gap: 0.8vw; font-size: 2.3vh; padding: 0.4vh 0.3vw; border-radius: 0.8vh; cursor: pointer; }
+  .box { width: 2.6vh; height: 2.6vh; border: 0.3vh solid #8b94a3; border-radius: 0.6vh; flex: none; display: flex; align-items: center; justify-content: center; font-size: 2vh; }
+  .task.done .box { background: #3ecf6e; border-color: #3ecf6e; color: #0b2b16; }
+  .task.done .label { text-decoration: line-through; opacity: 0.45; }
+  .dot { width: 1.6vh; height: 1.6vh; border-radius: 50%; flex: none; }
+  .Red { background: #ff5a5f; } .Yellow { background: #ffd23f; } .Green { background: #3ecf6e; }
+  .who { margin-left: auto; font-size: 1.8vh; opacity: 0.7; }
+  .status { position: fixed; right: 1vw; bottom: 0.6vh; font-size: 1.5vh; opacity: 0.5; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>PARTY PREP</h1>
+    <div class="progress" id="progress">Loading...</div>
+  </header>
+  <div class="bar"><div id="barfill"></div></div>
+  <div class="board" id="board"></div>
+</div>
+<div class="status" id="status"></div>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbwP_46e-PFuJUvP73uqkFZpLj_wE8maacg0QWWZoStINOvuLjfpm-yuhY4KGMhU7OzQ1g/exec';
+const REFRESH_MS = 30000;
+const SUBS = ['Kitchen', 'Bathroom', 'Basement', 'Living Room', 'Florida Room'];
+let tasks = [];
+let prevDone = null;
+
+function celebrate() {
+  if (typeof confetti !== 'function') return;
+  confetti({ particleCount: 140, spread: 80, origin: { y: 0.6 } });
+  setTimeout(() => confetti({ particleCount: 80, angle: 60, spread: 60, origin: { x: 0, y: 0.7 } }), 150);
+  setTimeout(() => confetti({ particleCount: 80, angle: 120, spread: 60, origin: { x: 1, y: 0.7 } }), 150);
+}
+
+function taskEl(t) {
+  const el = document.createElement('div');
+  el.className = 'task' + (t.done ? ' done' : '');
+  el.innerHTML = '<div class="box">' + (t.done ? '&#10003;' : '') + '</div>' +
+    '<div class="dot ' + t.priority + '"></div>' +
+    '<div class="label"></div><div class="who"></div>';
+  el.querySelector('.label').textContent = t.task;
+  el.querySelector('.who').textContent = t.assigned || '';
+  el.onclick = () => toggle(t);
+  return el;
+}
+
+function makeCard(title, list, extraClass) {
+  const card = document.createElement('div');
+  card.className = 'card' + (extraClass ? ' ' + extraClass : '');
+  card.innerHTML = '<h2></h2><div class="tasks"></div>';
+  card.querySelector('h2').textContent = title;
+  const box = card.querySelector('.tasks');
+  list.sort((a, b) => a.done - b.done).forEach(t => box.appendChild(taskEl(t)));
+  return card;
+}
+
+function render() {
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+  SUBS.forEach(sub => {
+    board.appendChild(makeCard(sub, tasks.filter(t => t.category === 'Inside' && t.subcategory === sub)));
+  });
+  board.appendChild(makeCard('Outside', tasks.filter(t => t.category === 'Outside'), 'outside'));
+  const done = tasks.filter(t => t.done).length;
+  document.getElementById('progress').textContent = done + ' of ' + tasks.length + ' done';
+  document.getElementById('barfill').style.width = (tasks.length ? done / tasks.length * 100 : 0) + '%';
+}
+
+async function load() {
+  try {
+    const res = await fetch(API_URL);
+    tasks = await res.json();
+    const nowDone = new Set(tasks.filter(t => t.done).map(t => t.id));
+    if (prevDone && [...nowDone].some(id => !prevDone.has(id))) celebrate();
+    prevDone = nowDone;
+    render();
+    document.getElementById('status').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (err) {
+    document.getElementById('status').textContent = 'Offline, retrying...';
+  }
+}
+
+async function toggle(t) {
+  t.done = !t.done;
+  if (t.done) { celebrate(); if (prevDone) prevDone.add(t.id); }
+  else if (prevDone) prevDone.delete(t.id);
+  render();
+  try {
+    await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ id: t.id, done: t.done })
+    });
+  } catch (err) {
+    document.getElementById('status').textContent = 'Save failed, retrying...';
+  }
+}
+
+load();
+setInterval(load, REFRESH_MS);
+</script>
+</body>
+</html>

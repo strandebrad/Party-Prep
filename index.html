@@ -19,9 +19,9 @@
   .card { background: #1b1f26; border-radius: 1.2vh; padding: 1.2vh 1vw; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
   .card h2 { font-size: 2.6vh; margin-bottom: 0.8vh; color: #8ab4ff; text-transform: uppercase; letter-spacing: 0.06em; }
   .outside h2 { color: #ffb86b; }
-  .tasks { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5vh; padding-right: 0.4vw; scrollbar-width: thin; scrollbar-color: #4a5260 transparent; }
-  .tasks::-webkit-scrollbar { width: 0.8vh; }
-  .tasks::-webkit-scrollbar-thumb { background: #4a5260; border-radius: 1vh; }
+  .tasks { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5vh; padding-right: 0.4vw; scrollbar-width: thin; scrollbar-color: #7a8494 #2a2f37; }
+  .tasks::-webkit-scrollbar { width: 1.2vh; }
+  .tasks::-webkit-scrollbar-thumb { background: #7a8494; border-radius: 1vh; }
   .tasks::-webkit-scrollbar-track { background: transparent; }
   .task { display: flex; align-items: center; gap: 0.8vw; font-size: 2.3vh; padding: 0.4vh 0.3vw; border-radius: 0.8vh; cursor: pointer; }
   .box { width: 2.6vh; height: 2.6vh; border: 0.3vh solid #8b94a3; border-radius: 0.6vh; flex: none; display: flex; align-items: center; justify-content: center; font-size: 2vh; }
@@ -82,11 +82,14 @@ function makeCard(title, list, extraClass) {
 
 function render() {
   const board = document.getElementById('board');
+  const scrolls = {};
+  board.querySelectorAll('.card').forEach(c => scrolls[c.querySelector('h2').textContent] = c.querySelector('.tasks').scrollTop);
   board.innerHTML = '';
   SUBS.forEach(sub => {
     board.appendChild(makeCard(sub, tasks.filter(t => t.category === 'Inside' && t.subcategory === sub)));
   });
   board.appendChild(makeCard('Outside', tasks.filter(t => t.category === 'Outside'), 'outside'));
+  board.querySelectorAll('.card').forEach(c => c.querySelector('.tasks').scrollTop = scrolls[c.querySelector('h2').textContent] || 0);
   const done = tasks.filter(t => t.done).length;
   document.getElementById('progress').textContent = done + ' of ' + tasks.length + ' done';
   document.getElementById('barfill').style.width = (tasks.length ? done / tasks.length * 100 : 0) + '%';

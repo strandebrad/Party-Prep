@@ -18,6 +18,11 @@
   .board { flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1.2vw; min-height: 0; }
   .card { background: #1b1f26; border-radius: 1.2vh; padding: 1.2vh 1vw; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
   .card h2 { font-size: 2.6vh; margin-bottom: 0.8vh; color: #8ab4ff; text-transform: uppercase; letter-spacing: 0.06em; }
+  .card-head { display: flex; align-items: center; }
+  .card-head h2 { flex: 1; }
+  .scroll-btn { width: 6vh; height: 4vh; margin: 0 0 0.8vh 0.6vw; font-size: 2.2vh; color: #f2f4f7; background: #2a2f37; border: 0.2vh solid #4a5260; border-radius: 0.8vh; cursor: pointer; }
+  .scroll-btn:disabled { opacity: 0.25; cursor: default; }
+  .no-scroll .scroll-btn { visibility: hidden; }
   .outside h2 { color: #ffb86b; }
   .tasks { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5vh; padding-right: 0.4vw; scrollbar-width: thin; scrollbar-color: #7a8494 #2a2f37; }
   .tasks::-webkit-scrollbar { width: 1.2vh; }
@@ -31,19 +36,19 @@
   .dot { width: 1.6vh; height: 1.6vh; border-radius: 50%; flex: none; }
   .Red { background: #ff5a5f; } .Yellow { background: #ffd23f; } .Green { background: #3ecf6e; }
   .who { margin-left: auto; font-size: 1.8vh; opacity: 0.7; }
-  .status { position: fixed; right: 1vw; bottom: 0.6vh; font-size: 1.5vh; opacity: 0.5; }
+  .status { margin-left: auto; margin-right: 2vw; font-size: 1.5vh; opacity: 0.5; }
 </style>
 </head>
 <body>
 <div class="app">
   <header>
     <h1>PARTY PREP</h1>
+    <div class="status" id="status"></div>
     <div class="progress" id="progress">Loading...</div>
   </header>
   <div class="bar"><div id="barfill"></div></div>
   <div class="board" id="board"></div>
 </div>
-<div class="status" id="status"></div>
 
 <script>
 const API_URL = 'https://script.google.com/macros/s/AKfycbwP_46e-PFuJUvP73uqkFZpLj_wE8maacg0QWWZoStINOvuLjfpm-yuhY4KGMhU7OzQ1g/exec';
@@ -76,11 +81,24 @@ function taskEl(t) {
 function makeCard(title, list, extraClass) {
   const card = document.createElement('div');
   card.className = 'card' + (extraClass ? ' ' + extraClass : '');
-  card.innerHTML = '<h2></h2><div class="tasks"></div>';
+  card.innerHTML = '<div class="card-head"><h2></h2>' +
+    '<button class="scroll-btn up">&#9650;</button><button class="scroll-btn down">&#9660;</button></div>' +
+    '<div class="tasks"></div>';
   card.querySelector('h2').textContent = title;
   const box = card.querySelector('.tasks');
   list.sort((a, b) => a.done - b.done).forEach(t => box.appendChild(taskEl(t)));
+  // Big buttons for TVs, whose browsers don't reliably respond to clicks on the scrollbar.
+  card.querySelector('.up').onclick = () => { box.scrollTop -= box.clientHeight * 0.8; };
+  card.querySelector('.down').onclick = () => { box.scrollTop += box.clientHeight * 0.8; };
+  box.onscroll = () => updateScrollButtons(card);
   return card;
+}
+
+function updateScrollButtons(card) {
+  const box = card.querySelector('.tasks');
+  card.querySelector('.card-head').classList.toggle('no-scroll', box.scrollHeight <= box.clientHeight + 1);
+  card.querySelector('.up').disabled = box.scrollTop <= 0;
+  card.querySelector('.down').disabled = box.scrollTop + box.clientHeight >= box.scrollHeight - 1;
 }
 
 function render() {
@@ -94,6 +112,7 @@ function render() {
   });
   board.appendChild(makeCard('Outside', tasks.filter(t => t.category === 'Outside'), 'outside'));
   board.querySelectorAll('.card').forEach(c => c.querySelector('.tasks').scrollTop = scrolls[c.querySelector('h2').textContent] || 0);
+  board.querySelectorAll('.card').forEach(updateScrollButtons);
   const refocus = focused && board.querySelector('.task[data-id="' + focused + '"]');
   if (refocus) refocus.focus();
   const done = tasks.filter(t => t.done).length;

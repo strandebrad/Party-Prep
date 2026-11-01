@@ -25,6 +25,7 @@
   .tasks::-webkit-scrollbar-track { background: transparent; }
   .task { display: flex; align-items: center; gap: 0.8vw; font-size: 2.3vh; padding: 0.4vh 0.3vw; border-radius: 0.8vh; cursor: pointer; }
   .box { width: 2.6vh; height: 2.6vh; border: 0.3vh solid #8b94a3; border-radius: 0.6vh; flex: none; display: flex; align-items: center; justify-content: center; font-size: 2vh; }
+  .task:focus { outline: 0.4vh solid #ffd23f; outline-offset: -0.4vh; background: #2a2f37; }
   .task.done .box { background: #3ecf6e; border-color: #3ecf6e; color: #0b2b16; }
   .task.done .label { text-decoration: line-through; opacity: 0.45; }
   .dot { width: 1.6vh; height: 1.6vh; border-radius: 50%; flex: none; }
@@ -61,6 +62,8 @@ function celebrate() {
 function taskEl(t) {
   const el = document.createElement('div');
   el.className = 'task' + (t.done ? ' done' : '');
+  el.tabIndex = 0;
+  el.setAttribute('data-id', t.id);
   el.innerHTML = '<div class="box">' + (t.done ? '&#10003;' : '') + '</div>' +
     '<div class="dot ' + t.priority + '"></div>' +
     '<div class="label"></div><div class="who"></div>';
@@ -83,6 +86,7 @@ function makeCard(title, list, extraClass) {
 function render() {
   const board = document.getElementById('board');
   const scrolls = {};
+  const focused = document.activeElement && document.activeElement.getAttribute('data-id');
   board.querySelectorAll('.card').forEach(c => scrolls[c.querySelector('h2').textContent] = c.querySelector('.tasks').scrollTop);
   board.innerHTML = '';
   SUBS.forEach(sub => {
@@ -90,6 +94,8 @@ function render() {
   });
   board.appendChild(makeCard('Outside', tasks.filter(t => t.category === 'Outside'), 'outside'));
   board.querySelectorAll('.card').forEach(c => c.querySelector('.tasks').scrollTop = scrolls[c.querySelector('h2').textContent] || 0);
+  const refocus = focused && board.querySelector('.task[data-id="' + focused + '"]');
+  if (refocus) refocus.focus();
   const done = tasks.filter(t => t.done).length;
   document.getElementById('progress').textContent = done + ' of ' + tasks.length + ' done';
   document.getElementById('barfill').style.width = (tasks.length ? done / tasks.length * 100 : 0) + '%';
@@ -124,6 +130,43 @@ async function toggle(t) {
     document.getElementById('status').textContent = 'Save failed, retrying...';
   }
 }
+
+// TV remote: arrows move between tasks and cards, OK/Enter toggles the highlighted task.
+function moveFocus(key) {
+  const cards = [].slice.call(document.querySelectorAll('.card'));
+  const lists = cards.map(c => [].slice.call(c.querySelectorAll('.task')));
+  const cur = document.activeElement;
+  let ci = cards.findIndex(c => c.contains(cur));
+  if (ci < 0) { const first = lists.find(l => l.length); if (first) first[0].focus(); return; }
+  let ti = lists[ci].indexOf(cur);
+  if (key === 'down' && ti < lists[ci].length - 1) ti++;
+  else if (key === 'up' && ti > 0) ti--;
+  else {
+    const step = { left: -1, right: 1, up: -3, down: 3 }[key];
+    let ni = ci + step;
+    while (ni >= 0 && ni < cards.length && !lists[ni].length) ni += step;
+    if (ni < 0 || ni >= cards.length) return;
+    ti = key === 'up' ? lists[ni].length - 1 : key === 'down' ? 0 : Math.min(ti, lists[ni].length - 1);
+    ci = ni;
+  }
+  lists[ci][ti].focus();
+  lists[ci][ti].scrollIntoView({ block: 'nearest' });
+}
+
+document.addEventListener('keydown', e => {
+  const key = { 37: 'left', 38: 'up', 39: 'right', 40: 'down' }[e.keyCode];
+  if (key) { e.preventDefault(); moveFocus(key); }
+  else if (e.keyCode === 13 && document.activeElement.classList.contains('task')) {
+    e.preventDefault();
+    const card = document.activeElement.closest('.card');
+    const title = card.querySelector('h2').textContent;
+    const ti = [].slice.call(card.querySelectorAll('.task')).indexOf(document.activeElement);
+    document.activeElement.click();
+    // Ticked tasks re-sort to the bottom; keep the highlight in the same spot.
+    const same = [].slice.call(document.querySelectorAll('.card')).find(c => c.querySelector('h2').textContent === title);
+    if (same) same.querySelectorAll('.task')[ti].focus();
+  }
+});
 
 load();
 setInterval(load, REFRESH_MS);

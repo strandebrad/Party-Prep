@@ -75,6 +75,8 @@ function taskEl(t) {
   el.querySelector('.label').textContent = t.task;
   el.querySelector('.who').textContent = t.assigned || '';
   el.onclick = () => toggle(t);
+  // Don't focus on click: the TV browser scrolls the card to whatever gets focus.
+  el.onmousedown = e => e.preventDefault();
   return el;
 }
 
@@ -86,7 +88,8 @@ function makeCard(title, list, extraClass) {
     '<div class="tasks"></div>';
   card.querySelector('h2').textContent = title;
   const box = card.querySelector('.tasks');
-  list.sort((a, b) => a.done - b.done).forEach(t => box.appendChild(taskEl(t)));
+  // Keep sheet order (don't sink done tasks) so ticking never shifts the list under you.
+  list.forEach(t => box.appendChild(taskEl(t)));
   // Big buttons for TVs, whose browsers don't reliably respond to clicks on the scrollbar.
   card.querySelector('.up').onclick = () => { box.scrollTop -= box.clientHeight * 0.8; };
   card.querySelector('.down').onclick = () => { box.scrollTop += box.clientHeight * 0.8; };
@@ -111,7 +114,7 @@ function render() {
     board.appendChild(makeCard(sub, tasks.filter(t => t.category === 'Inside' && t.subcategory === sub)));
   });
   board.appendChild(makeCard('Outside', tasks.filter(t => t.category === 'Outside'), 'outside'));
-  // Refocus before restoring scroll so focusing the task (which may have re-sorted to the bottom) doesn't move the card.
+  // Refocus before restoring scroll so focusing the task doesn't move the card.
   const refocus = focused && board.querySelector('.task[data-id="' + focused + '"]');
   if (refocus) refocus.focus({ preventScroll: true });
   board.querySelectorAll('.card').forEach(c => c.querySelector('.tasks').scrollTop = scrolls[c.querySelector('h2').textContent] || 0);
@@ -178,13 +181,7 @@ document.addEventListener('keydown', e => {
   if (key) { e.preventDefault(); moveFocus(key); }
   else if (e.keyCode === 13 && document.activeElement.classList.contains('task')) {
     e.preventDefault();
-    const card = document.activeElement.closest('.card');
-    const title = card.querySelector('h2').textContent;
-    const ti = [].slice.call(card.querySelectorAll('.task')).indexOf(document.activeElement);
     document.activeElement.click();
-    // Ticked tasks re-sort to the bottom; keep the highlight in the same spot.
-    const same = [].slice.call(document.querySelectorAll('.card')).find(c => c.querySelector('h2').textContent === title);
-    if (same) same.querySelectorAll('.task')[ti].focus();
   }
 });
 

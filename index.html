@@ -18,48 +18,38 @@
   .board { flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1.2vw; min-height: 0; }
   .card { background: #1b1f26; border-radius: 1.2vh; padding: 1.2vh 1vw; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
   .card h2 { font-size: 2.6vh; margin-bottom: 0.8vh; color: #8ab4ff; text-transform: uppercase; letter-spacing: 0.06em; }
-  .card-head { display: flex; align-items: center; }
-  .card-head h2 { flex: 1; }
-  .scroll-btn { width: 6vh; height: 4vh; margin: 0 0 0.8vh 0.6vw; font-size: 2.2vh; color: #f2f4f7; background: #2a2f37; border: 0.2vh solid #4a5260; border-radius: 0.8vh; cursor: pointer; }
-  .scroll-btn:disabled { opacity: 0.25; cursor: default; }
-  .no-scroll .scroll-btn { visibility: hidden; }
   .outside h2 { color: #ffb86b; }
-  .tasks { flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; display: flex; flex-direction: column; gap: 0.5vh; padding-right: 0.4vw; }
-  .tasks::-webkit-scrollbar { width: 2.6vh; }
+  .tasks { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5vh; padding-right: 0.4vw; scrollbar-width: thin; scrollbar-color: #7a8494 #2a2f37; }
+  .tasks::-webkit-scrollbar { width: 1.2vh; }
   .tasks::-webkit-scrollbar-thumb { background: #7a8494; border-radius: 1vh; }
-  .tasks::-webkit-scrollbar-track { background: #2a2f37; border-radius: 1vh; }
+  .tasks::-webkit-scrollbar-track { background: transparent; }
   .task { display: flex; align-items: center; gap: 0.8vw; font-size: 2.3vh; padding: 0.4vh 0.3vw; border-radius: 0.8vh; cursor: pointer; }
   .box { width: 2.6vh; height: 2.6vh; border: 0.3vh solid #8b94a3; border-radius: 0.6vh; flex: none; display: flex; align-items: center; justify-content: center; font-size: 2vh; }
-  .task:focus { outline: 0.4vh solid #ffd23f; outline-offset: -0.4vh; background: #2a2f37; }
   .task.done .box { background: #3ecf6e; border-color: #3ecf6e; color: #0b2b16; }
   .task.done .label { text-decoration: line-through; opacity: 0.45; }
   .dot { width: 1.6vh; height: 1.6vh; border-radius: 50%; flex: none; }
   .Red { background: #ff5a5f; } .Yellow { background: #ffd23f; } .Green { background: #3ecf6e; }
   .who { margin-left: auto; font-size: 1.8vh; opacity: 0.7; }
-  .status { margin-left: auto; margin-right: 2vw; font-size: 1.5vh; opacity: 0.5; }
+  .status { position: fixed; right: 1vw; bottom: 0.6vh; font-size: 1.5vh; opacity: 0.5; }
 </style>
 </head>
 <body>
 <div class="app">
   <header>
     <h1>PARTY PREP</h1>
-    <div class="status" id="status"></div>
     <div class="progress" id="progress">Loading...</div>
   </header>
   <div class="bar"><div id="barfill"></div></div>
   <div class="board" id="board"></div>
 </div>
+<div class="status" id="status"></div>
 
 <script>
 const API_URL = 'https://script.google.com/macros/s/AKfycbwP_46e-PFuJUvP73uqkFZpLj_wE8maacg0QWWZoStINOvuLjfpm-yuhY4KGMhU7OzQ1g/exec';
 const REFRESH_MS = 30000;
-// Shown in the corner so you can tell which version a screen has loaded.
-const VERSION = 'v7';
 const SUBS = ['Kitchen', 'Bathroom', 'Basement', 'Living Room', 'Florida Room'];
 let tasks = [];
 let prevDone = null;
-// Everything about the tasks except done-ness; when unchanged, refreshes update ticks in place.
-let layoutKey = '';
 
 function celebrate() {
   if (typeof confetti !== 'function') return;
@@ -70,121 +60,60 @@ function celebrate() {
 
 function taskEl(t) {
   const el = document.createElement('div');
-  el.tabIndex = 0;
-  el.innerHTML = '<div class="box"></div><div class="dot"></div><div class="label"></div><div class="who"></div>';
-  fillRow(el, t);
-  // Rows can show a different task after a tick, so look the task up when clicked.
-  el.onclick = () => toggle(el.getAttribute('data-id'));
-  // Don't focus on click: the TV browser scrolls the card to whatever gets focus.
-  el.onmousedown = e => e.preventDefault();
-  return el;
-}
-
-function fillRow(el, t) {
   el.className = 'task' + (t.done ? ' done' : '');
-  el.setAttribute('data-id', t.id);
-  el.querySelector('.box').innerHTML = t.done ? '&#10003;' : '';
-  el.querySelector('.dot').className = 'dot ' + t.priority;
+  el.innerHTML = '<div class="box">' + (t.done ? '&#10003;' : '') + '</div>' +
+    '<div class="dot ' + t.priority + '"></div>' +
+    '<div class="label"></div><div class="who"></div>';
   el.querySelector('.label').textContent = t.task;
   el.querySelector('.who').textContent = t.assigned || '';
+  el.onclick = () => toggle(t);
+  return el;
 }
 
 function makeCard(title, list, extraClass) {
   const card = document.createElement('div');
   card.className = 'card' + (extraClass ? ' ' + extraClass : '');
-  card.innerHTML = '<div class="card-head"><h2></h2>' +
-    '<button class="scroll-btn up">&#9650;</button><button class="scroll-btn down">&#9660;</button></div>' +
-    '<div class="tasks"></div>';
+  card.innerHTML = '<h2></h2><div class="tasks"></div>';
   card.querySelector('h2').textContent = title;
   const box = card.querySelector('.tasks');
   list.sort((a, b) => a.done - b.done).forEach(t => box.appendChild(taskEl(t)));
-  // Big buttons for TVs, whose browsers don't reliably respond to clicks on the scrollbar.
-  card.querySelector('.up').onclick = () => { box.scrollTop -= box.clientHeight * 0.8; };
-  card.querySelector('.down').onclick = () => { box.scrollTop += box.clientHeight * 0.8; };
-  box.onscroll = () => updateScrollButtons(card);
   return card;
-}
-
-function updateScrollButtons(card) {
-  const box = card.querySelector('.tasks');
-  card.querySelector('.card-head').classList.toggle('no-scroll', box.scrollHeight <= box.clientHeight + 1);
-  card.querySelector('.up').disabled = box.scrollTop <= 0;
-  card.querySelector('.down').disabled = box.scrollTop + box.clientHeight >= box.scrollHeight - 1;
 }
 
 function render() {
   const board = document.getElementById('board');
   const scrolls = {};
-  const focused = document.activeElement && document.activeElement.getAttribute('data-id');
   board.querySelectorAll('.card').forEach(c => scrolls[c.querySelector('h2').textContent] = c.querySelector('.tasks').scrollTop);
   board.innerHTML = '';
   SUBS.forEach(sub => {
     board.appendChild(makeCard(sub, tasks.filter(t => t.category === 'Inside' && t.subcategory === sub)));
   });
   board.appendChild(makeCard('Outside', tasks.filter(t => t.category === 'Outside'), 'outside'));
-  // Refocus before restoring scroll so focusing the task doesn't move the card.
-  const refocus = focused && board.querySelector('.task[data-id="' + focused + '"]');
-  if (refocus) refocus.focus({ preventScroll: true });
   board.querySelectorAll('.card').forEach(c => c.querySelector('.tasks').scrollTop = scrolls[c.querySelector('h2').textContent] || 0);
-  board.querySelectorAll('.card').forEach(updateScrollButtons);
-  updateProgress();
-}
-
-function updateProgress() {
   const done = tasks.filter(t => t.done).length;
   document.getElementById('progress').textContent = done + ' of ' + tasks.length + ' done';
   document.getElementById('barfill').style.width = (tasks.length ? done / tasks.length * 100 : 0) + '%';
 }
 
-// Tick/untick one task without moving any rows: a done task's text goes to the bottom row and the
-// tasks below it shift up one row; an undone one goes to the end of the not-done tasks. The row
-// elements themselves stay put, so the TV browser has nothing to scroll to.
-function setDoneInPlace(t) {
-  const el = document.querySelector('.task[data-id="' + t.id + '"]');
-  if (!el) return;
-  const box = el.parentNode;
-  const scroll = box.scrollTop;
-  const rows = [].slice.call(box.querySelectorAll('.task'));
-  const order = rows.map(r => findTask(r.getAttribute('data-id'))).filter(x => x && x !== t);
-  const firstDone = order.findIndex(x => x.done);
-  if (t.done || firstDone < 0) order.push(t);
-  else order.splice(firstDone, 0, t);
-  rows.forEach((r, i) => { if (order[i]) fillRow(r, order[i]); });
-  box.scrollTop = scroll;
-  updateScrollButtons(box.closest('.card'));
-}
-
-function findTask(id) {
-  return tasks.find(x => String(x.id) === String(id));
-}
-
 async function load() {
   try {
     const res = await fetch(API_URL);
-    const fresh = await res.json();
-    const key = JSON.stringify(fresh.map(t => [t.id, t.task, t.category, t.subcategory, t.priority, t.assigned]));
-    const changed = key === layoutKey ? fresh.filter((t, i) => t.done !== tasks[i].done) : null;
-    layoutKey = key;
-    tasks = fresh;
+    tasks = await res.json();
     const nowDone = new Set(tasks.filter(t => t.done).map(t => t.id));
     if (prevDone && [...nowDone].some(id => !prevDone.has(id))) celebrate();
     prevDone = nowDone;
-    if (changed) { changed.forEach(setDoneInPlace); updateProgress(); }
-    else render();
-    document.getElementById('status').textContent = 'Updated ' + new Date().toLocaleTimeString() + ' \u00b7 ' + VERSION;
+    render();
+    document.getElementById('status').textContent = 'Updated ' + new Date().toLocaleTimeString();
   } catch (err) {
     document.getElementById('status').textContent = 'Offline, retrying...';
   }
 }
 
-async function toggle(id) {
-  const t = findTask(id);
-  if (!t) return;
+async function toggle(t) {
   t.done = !t.done;
   if (t.done) { celebrate(); if (prevDone) prevDone.add(t.id); }
   else if (prevDone) prevDone.delete(t.id);
-  setDoneInPlace(t);
-  updateProgress();
+  render();
   try {
     await fetch(API_URL, {
       method: 'POST',
@@ -195,37 +124,6 @@ async function toggle(id) {
     document.getElementById('status').textContent = 'Save failed, retrying...';
   }
 }
-
-// TV remote: arrows move between tasks and cards, OK/Enter toggles the highlighted task.
-function moveFocus(key) {
-  const cards = [].slice.call(document.querySelectorAll('.card'));
-  const lists = cards.map(c => [].slice.call(c.querySelectorAll('.task')));
-  const cur = document.activeElement;
-  let ci = cards.findIndex(c => c.contains(cur));
-  if (ci < 0) { const first = lists.find(l => l.length); if (first) first[0].focus(); return; }
-  let ti = lists[ci].indexOf(cur);
-  if (key === 'down' && ti < lists[ci].length - 1) ti++;
-  else if (key === 'up' && ti > 0) ti--;
-  else {
-    const step = { left: -1, right: 1, up: -3, down: 3 }[key];
-    let ni = ci + step;
-    while (ni >= 0 && ni < cards.length && !lists[ni].length) ni += step;
-    if (ni < 0 || ni >= cards.length) return;
-    ti = key === 'up' ? lists[ni].length - 1 : key === 'down' ? 0 : Math.min(ti, lists[ni].length - 1);
-    ci = ni;
-  }
-  lists[ci][ti].focus();
-  lists[ci][ti].scrollIntoView({ block: 'nearest' });
-}
-
-document.addEventListener('keydown', e => {
-  const key = { 37: 'left', 38: 'up', 39: 'right', 40: 'down' }[e.keyCode];
-  if (key) { e.preventDefault(); moveFocus(key); }
-  else if (e.keyCode === 13 && document.activeElement.classList.contains('task')) {
-    e.preventDefault();
-    document.activeElement.click();
-  }
-});
 
 load();
 setInterval(load, REFRESH_MS);

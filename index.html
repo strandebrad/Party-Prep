@@ -111,10 +111,11 @@ function render() {
     board.appendChild(makeCard(sub, tasks.filter(t => t.category === 'Inside' && t.subcategory === sub)));
   });
   board.appendChild(makeCard('Outside', tasks.filter(t => t.category === 'Outside'), 'outside'));
+  // Refocus before restoring scroll so focusing the task (which may have re-sorted to the bottom) doesn't move the card.
+  const refocus = focused && board.querySelector('.task[data-id="' + focused + '"]');
+  if (refocus) refocus.focus({ preventScroll: true });
   board.querySelectorAll('.card').forEach(c => c.querySelector('.tasks').scrollTop = scrolls[c.querySelector('h2').textContent] || 0);
   board.querySelectorAll('.card').forEach(updateScrollButtons);
-  const refocus = focused && board.querySelector('.task[data-id="' + focused + '"]');
-  if (refocus) refocus.focus();
   const done = tasks.filter(t => t.done).length;
   document.getElementById('progress').textContent = done + ' of ' + tasks.length + ' done';
   document.getElementById('barfill').style.width = (tasks.length ? done / tasks.length * 100 : 0) + '%';

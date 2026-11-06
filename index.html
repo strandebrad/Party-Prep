@@ -24,7 +24,7 @@
   .scroll-btn:disabled { opacity: 0.25; cursor: default; }
   .no-scroll .scroll-btn { visibility: hidden; }
   .outside h2 { color: #ffb86b; }
-  .tasks { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5vh; padding-right: 0.4vw; }
+  .tasks { flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; display: flex; flex-direction: column; gap: 0.5vh; padding-right: 0.4vw; }
   .tasks::-webkit-scrollbar { width: 2.6vh; }
   .tasks::-webkit-scrollbar-thumb { background: #7a8494; border-radius: 1vh; }
   .tasks::-webkit-scrollbar-track { background: #2a2f37; border-radius: 1vh; }
@@ -56,6 +56,8 @@ const REFRESH_MS = 30000;
 const SUBS = ['Kitchen', 'Bathroom', 'Basement', 'Living Room', 'Florida Room'];
 let tasks = [];
 let prevDone = null;
+// Everything about the tasks except done-ness; when unchanged, refreshes update ticks in place.
+let layoutKey = '';
 
 function celebrate() {
   if (typeof confetti !== 'function') return;
@@ -74,7 +76,7 @@ function taskEl(t) {
     '<div class="label"></div><div class="who"></div>';
   el.querySelector('.label').textContent = t.task;
   el.querySelector('.who').textContent = t.assigned || '';
-  el.onclick = () => toggle(t);
+  el.onclick = () => toggle(t.id);
   // Don't focus on click: the TV browser scrolls the card to whatever gets focus.
   el.onmousedown = e => e.preventDefault();
   return el;
@@ -88,8 +90,7 @@ function makeCard(title, list, extraClass) {
     '<div class="tasks"></div>';
   card.querySelector('h2').textContent = title;
   const box = card.querySelector('.tasks');
-  // Keep sheet order (don't sink done tasks) so ticking never shifts the list under you.
-  list.forEach(t => box.appendChild(taskEl(t)));
+  list.sort((a, b) => a.done - b.done).forEach(t => box.appendChild(taskEl(t)));
   // Big buttons for TVs, whose browsers don't reliably respond to clicks on the scrollbar.
   card.querySelector('.up').onclick = () => { box.scrollTop -= box.clientHeight * 0.8; };
   card.querySelector('.down').onclick = () => { box.scrollTop += box.clientHeight * 0.8; };
@@ -119,30 +120,57 @@ function render() {
   if (refocus) refocus.focus({ preventScroll: true });
   board.querySelectorAll('.card').forEach(c => c.querySelector('.tasks').scrollTop = scrolls[c.querySelector('h2').textContent] || 0);
   board.querySelectorAll('.card').forEach(updateScrollButtons);
+  updateProgress();
+}
+
+function updateProgress() {
   const done = tasks.filter(t => t.done).length;
   document.getElementById('progress').textContent = done + ' of ' + tasks.length + ' done';
   document.getElementById('barfill').style.width = (tasks.length ? done / tasks.length * 100 : 0) + '%';
 }
 
+// Tick/untick one task without rebuilding the card: a done task moves to the bottom of its list,
+// an undone one moves up to the end of the not-done tasks, and the card's scroll position is kept.
+function setDoneInPlace(t) {
+  const el = document.querySelector('.task[data-id="' + t.id + '"]');
+  if (!el) return;
+  const box = el.parentNode;
+  const scroll = box.scrollTop;
+  el.classList.toggle('done', t.done);
+  el.querySelector('.box').innerHTML = t.done ? '&#10003;' : '';
+  if (t.done) box.appendChild(el);
+  else box.insertBefore(el, box.querySelector('.task.done'));
+  box.scrollTop = scroll;
+  updateScrollButtons(box.closest('.card'));
+}
+
 async function load() {
   try {
     const res = await fetch(API_URL);
-    tasks = await res.json();
+    const fresh = await res.json();
+    const key = JSON.stringify(fresh.map(t => [t.id, t.task, t.category, t.subcategory, t.priority, t.assigned]));
+    const changed = key === layoutKey ? fresh.filter((t, i) => t.done !== tasks[i].done) : null;
+    layoutKey = key;
+    tasks = fresh;
     const nowDone = new Set(tasks.filter(t => t.done).map(t => t.id));
     if (prevDone && [...nowDone].some(id => !prevDone.has(id))) celebrate();
     prevDone = nowDone;
-    render();
+    if (changed) { changed.forEach(setDoneInPlace); updateProgress(); }
+    else render();
     document.getElementById('status').textContent = 'Updated ' + new Date().toLocaleTimeString();
   } catch (err) {
     document.getElementById('status').textContent = 'Offline, retrying...';
   }
 }
 
-async function toggle(t) {
+async function toggle(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
   t.done = !t.done;
   if (t.done) { celebrate(); if (prevDone) prevDone.add(t.id); }
   else if (prevDone) prevDone.delete(t.id);
-  render();
+  setDoneInPlace(t);
+  updateProgress();
   try {
     await fetch(API_URL, {
       method: 'POST',

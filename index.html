@@ -53,6 +53,8 @@
 <script>
 const API_URL = 'https://script.google.com/macros/s/AKfycbwP_46e-PFuJUvP73uqkFZpLj_wE8maacg0QWWZoStINOvuLjfpm-yuhY4KGMhU7OzQ1g/exec';
 const REFRESH_MS = 30000;
+// Shown in the corner so you can tell which version a screen has loaded.
+const VERSION = 'v7';
 const SUBS = ['Kitchen', 'Bathroom', 'Basement', 'Living Room', 'Florida Room'];
 let tasks = [];
 let prevDone = null;
@@ -68,18 +70,23 @@ function celebrate() {
 
 function taskEl(t) {
   const el = document.createElement('div');
-  el.className = 'task' + (t.done ? ' done' : '');
   el.tabIndex = 0;
-  el.setAttribute('data-id', t.id);
-  el.innerHTML = '<div class="box">' + (t.done ? '&#10003;' : '') + '</div>' +
-    '<div class="dot ' + t.priority + '"></div>' +
-    '<div class="label"></div><div class="who"></div>';
-  el.querySelector('.label').textContent = t.task;
-  el.querySelector('.who').textContent = t.assigned || '';
-  el.onclick = () => toggle(t.id);
+  el.innerHTML = '<div class="box"></div><div class="dot"></div><div class="label"></div><div class="who"></div>';
+  fillRow(el, t);
+  // Rows can show a different task after a tick, so look the task up when clicked.
+  el.onclick = () => toggle(el.getAttribute('data-id'));
   // Don't focus on click: the TV browser scrolls the card to whatever gets focus.
   el.onmousedown = e => e.preventDefault();
   return el;
+}
+
+function fillRow(el, t) {
+  el.className = 'task' + (t.done ? ' done' : '');
+  el.setAttribute('data-id', t.id);
+  el.querySelector('.box').innerHTML = t.done ? '&#10003;' : '';
+  el.querySelector('.dot').className = 'dot ' + t.priority;
+  el.querySelector('.label').textContent = t.task;
+  el.querySelector('.who').textContent = t.assigned || '';
 }
 
 function makeCard(title, list, extraClass) {
@@ -129,19 +136,26 @@ function updateProgress() {
   document.getElementById('barfill').style.width = (tasks.length ? done / tasks.length * 100 : 0) + '%';
 }
 
-// Tick/untick one task without rebuilding the card: a done task moves to the bottom of its list,
-// an undone one moves up to the end of the not-done tasks, and the card's scroll position is kept.
+// Tick/untick one task without moving any rows: a done task's text goes to the bottom row and the
+// tasks below it shift up one row; an undone one goes to the end of the not-done tasks. The row
+// elements themselves stay put, so the TV browser has nothing to scroll to.
 function setDoneInPlace(t) {
   const el = document.querySelector('.task[data-id="' + t.id + '"]');
   if (!el) return;
   const box = el.parentNode;
   const scroll = box.scrollTop;
-  el.classList.toggle('done', t.done);
-  el.querySelector('.box').innerHTML = t.done ? '&#10003;' : '';
-  if (t.done) box.appendChild(el);
-  else box.insertBefore(el, box.querySelector('.task.done'));
+  const rows = [].slice.call(box.querySelectorAll('.task'));
+  const order = rows.map(r => findTask(r.getAttribute('data-id'))).filter(x => x && x !== t);
+  const firstDone = order.findIndex(x => x.done);
+  if (t.done || firstDone < 0) order.push(t);
+  else order.splice(firstDone, 0, t);
+  rows.forEach((r, i) => { if (order[i]) fillRow(r, order[i]); });
   box.scrollTop = scroll;
   updateScrollButtons(box.closest('.card'));
+}
+
+function findTask(id) {
+  return tasks.find(x => String(x.id) === String(id));
 }
 
 async function load() {
@@ -157,14 +171,14 @@ async function load() {
     prevDone = nowDone;
     if (changed) { changed.forEach(setDoneInPlace); updateProgress(); }
     else render();
-    document.getElementById('status').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    document.getElementById('status').textContent = 'Updated ' + new Date().toLocaleTimeString() + ' \u00b7 ' + VERSION;
   } catch (err) {
     document.getElementById('status').textContent = 'Offline, retrying...';
   }
 }
 
 async function toggle(id) {
-  const t = tasks.find(x => x.id === id);
+  const t = findTask(id);
   if (!t) return;
   t.done = !t.done;
   if (t.done) { celebrate(); if (prevDone) prevDone.add(t.id); }
